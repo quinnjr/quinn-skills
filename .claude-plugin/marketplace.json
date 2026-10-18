@@ -18,7 +18,8 @@
       "author": {
         "name": "Joseph R. Quinn"
       },
-      "category": "productivity"
+      "category": "productivity",
+      "license": "MIT"
     }
   ]
 }

@@ -75,3 +75,7 @@ plugins/
 ## Adding a plugin
 
 Create `plugins/<plugin-name>/.claude-plugin/plugin.json` plus its `skills/`, `commands/`, `agents/` or `hooks/` directories, then add an entry to the `plugins` array in `.claude-plugin/marketplace.json`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
