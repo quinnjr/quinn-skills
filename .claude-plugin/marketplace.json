@@ -1,0 +1,25 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "quinn-skills",
+  "owner": {
+    "name": "Joseph R. Quinn",
+    "email": "423821+quinnjr@users.noreply.github.com"
+  },
+  "metadata": {
+    "description": "Joseph R. Quinn's personal Claude Code plugins and skills",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "quinn-skills",
+      "source": "./plugins/quinn-skills",
+      "description": "Core collection of Joseph R. Quinn's agent skills",
+      "version": "1.0.0",
+      "author": {
+        "name": "Joseph R. Quinn"
+      },
+      "category": "productivity",
+      "license": "MIT"
+    }
+  ]
+}
