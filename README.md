@@ -23,6 +23,7 @@ plugins/
   quinn-skills/
     .claude-plugin/plugin.json       # plugin manifest
     skills/<skill-name>/SKILL.md     # one directory per skill
+    agents/<agent-name>.md           # one file per subagent
 ```
 
 ## Adding a skill
