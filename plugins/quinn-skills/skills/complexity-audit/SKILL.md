@@ -8,7 +8,7 @@ description: >-
   efficiency, or preparing for scale.
 user-invocable: true
 disable-model-invocation: true
-allowed-tools: Agent Bash(git *) Read Grep Glob Edit AskUserQuestion
+allowed-tools: Agent Bash(git *) Bash(sed *) Bash(sort *) Bash(uniq *) Bash(head *) Bash(grep *) Read Grep Glob Edit AskUserQuestion
 argument-hint: "[path] [--threshold n1|nlogn|n2|n3]"
 ---
 
@@ -18,6 +18,34 @@ You are orchestrating a **comprehensive Big O complexity audit** of this
 project. You will analyze every function for time and space complexity,
 classify findings into severity tiers, and offer to optimize the worst
 offenders.
+
+## Harness compatibility
+
+This skill runs in Claude Code, Kiro and OpenCode. When a step below names a
+capability, use your harness's tool for it:
+
+| Capability | Claude Code | Kiro | OpenCode |
+|---|---|---|---|
+| Run a shell command | `Bash` | `shell` | `shell` |
+| Read, search, edit files | `Read`, `Grep`, `Glob`, `Edit` | `read`, `grep`, `glob`, `write` | `read`, `grep`, `glob`, `edit` |
+| Read-only subagent | `Agent` with `subagent_type: "Explore"` | `subagent` (`use_subagent` on older Kiro); tell it not to modify files | `subagent` with `agent: "explore"` |
+| Write-capable subagent | `Agent` with `subagent_type: "general-purpose"` | `subagent` (`use_subagent` on older Kiro) | `subagent` with `agent: "general"` |
+| Ask the user to choose | `AskUserQuestion` | ask in chat as a numbered list, then wait for the reply | `question` |
+| Web search | `WebSearch` | `web_search` | `websearch` |
+
+- **Parallel subagents**: start them all at once — several subagent calls in
+  the same turn, or one call listing every task when your subagent tool takes
+  a list (Kiro's `subagent`). Subagents cannot talk to the user; only you can.
+- **`$ARGUMENTS`** is whatever the user typed with the request. Claude Code
+  fills it in. In Kiro and OpenCode, take it from the user's message (the text
+  after `/<skill-name>` or the skill mention), and treat it as empty if there
+  is none.
+- **`${CLAUDE_SKILL_DIR}`** is this skill's own directory. Claude Code expands
+  it and the Kiro and OpenCode installers rewrite it. If you still see it
+  literally, use the directory this `SKILL.md` was loaded from.
+- **Shell blocks** in this skill are for you to run with your shell tool. Each
+  call starts a fresh shell, so carry values between steps by substituting
+  them as literal strings, not shell variables.
 
 ## Inputs
 
@@ -43,25 +71,26 @@ Examples:
 
 ## Phase 1: Preparation
 
-Before launching agents, gather baseline context.
+Before launching agents, gather baseline context. Run each command with
+your shell tool, substituting the parsed `SCOPE_PATH` for `<SCOPE_PATH>`.
 
 ### 1.1 Detect languages
 
-```!
-git ls-files -- "$SCOPE_PATH" | sed 's/.*\.//' | sort | uniq -c | sort -rn | head -20
+```bash
+git ls-files -- "<SCOPE_PATH>" | sed 's/.*\.//' | sort | uniq -c | sort -rn | head -20
 ```
 
 ### 1.2 Get the code file tree
 
-```!
-git ls-files -- "$SCOPE_PATH" | grep -vE '(\.md$|\.txt$|\.json$|\.ya?ml$|\.toml$|\.lock$|\.csv$|\.svg$|\.png$|\.jpg$|\.gif$|\.ico$|\.woff|\.eot$|\.ttf$|\.map$|\.min\.|node_modules/|vendor/|dist/|build/|\.git/|__pycache__|\.pytest_cache|\.next/|\.nuxt/|target/|\.idea/|\.vscode/)' | grep -vE '(test_|_test\.|\.test\.|\.spec\.|__tests__|tests/|spec/)' | head -1000
+```bash
+git ls-files -- "<SCOPE_PATH>" | grep -vE '(\.md$|\.txt$|\.json$|\.ya?ml$|\.toml$|\.lock$|\.csv$|\.svg$|\.png$|\.jpg$|\.gif$|\.ico$|\.woff|\.eot$|\.ttf$|\.map$|\.min\.|node_modules/|vendor/|dist/|build/|\.git/|__pycache__|\.pytest_cache|\.next/|\.nuxt/|target/|\.idea/|\.vscode/)' | grep -vE '(test_|_test\.|\.test\.|\.spec\.|__tests__|tests/|spec/)' | head -1000
 ```
 
 Store this as `CODE_FILES`. This is the list of files agents will analyze.
 
 Also get the full tree (including tests) for cross-reference context:
-```!
-git ls-files -- "$SCOPE_PATH" | head -750
+```bash
+git ls-files -- "<SCOPE_PATH>" | head -750
 ```
 
 Store this as `FULL_TREE`.
@@ -92,11 +121,8 @@ Store each chunk as `AGENT_N_FILES` (where N is the agent number).
 
 ## Phase 2: Parallel Analysis
 
-Launch all agents **in parallel** in a single message containing multiple
-Agent tool calls. Each agent is read-only — it reports findings but does
-not modify any files.
-
-Set `subagent_type` to `"Explore"` (read-only, no edits) for each agent.
+Launch all agents **in parallel** as read-only subagents (see Harness
+compatibility). Each agent reports findings but does not modify any files.
 
 For each agent, use this prompt template (filling in the variables):
 
@@ -229,7 +255,7 @@ Analyzed {N} files across {M} functions.
 Languages: {detected languages}
 Agents used: {count}
 
-> **Note**: This is static analysis by Claude, not formal verification.
+> **Note**: This is static analysis by an AI agent, not formal verification.
 > Complexity estimates are best-effort based on code structure and may
 > not account for all runtime behaviors, input distributions, or
 > framework-specific optimizations.
@@ -275,7 +301,7 @@ instead of an empty table.
 ## Phase 4: Optimization Offer
 
 After printing the report, if there are any Critical or Warning findings,
-use AskUserQuestion to present the optimization options:
+ask the user to choose (see Harness compatibility):
 
 > "I found **{X} functions** in the Critical/Warning tiers that could be
 > optimized. Would you like me to implement the optimizations?"
@@ -290,12 +316,12 @@ Options:
 
 1. Collect the selected functions and their optimization suggestions.
 2. Group them by file.
-3. Launch parallel agents — one per file (or small group of files in the
-   same directory). Each agent receives:
+3. Launch parallel write-capable subagents — one per file (or small group
+   of files in the same directory). Each agent receives:
    - The file path(s) to modify
    - The specific functions to optimize with the suggested approach
-   - Instructions to use `Read` to read the current file, then `Edit`
-     to apply the optimization
+   - Instructions to read the current file, then edit it to apply the
+     optimization
    - Instructions to preserve function signatures and public APIs — if
      a signature change is unavoidable, flag it in the output
 4. After all optimization agents return, print a summary:

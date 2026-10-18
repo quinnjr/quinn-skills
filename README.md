@@ -68,8 +68,9 @@ plugins/
 ## Adding a skill
 
 1. Create `plugins/quinn-skills/skills/<skill-name>/SKILL.md` with `name` and `description` frontmatter.
-2. Bump `version` in both `plugins/quinn-skills/.claude-plugin/plugin.json` and the matching entry in `.claude-plugin/marketplace.json` (installed copies only update when the version changes).
-3. Validate: `claude plugin validate .`
+2. Keep it working in Claude Code, Kiro and OpenCode: copy the "Harness compatibility" section from an existing skill, describe steps by capability ("ask the user to choose", "launch read-only subagents") rather than by Claude tool name, and use ordinary `bash` blocks for commands, not ` ```! ` blocks, which only Claude Code runs.
+3. Bump `version` in both `plugins/quinn-skills/.claude-plugin/plugin.json` and the matching entry in `.claude-plugin/marketplace.json` (installed copies only update when the version changes).
+4. Validate: `claude plugin validate .`
 
 ## Adding a plugin
 

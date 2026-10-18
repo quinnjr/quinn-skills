@@ -32,7 +32,7 @@ you've confirmed it's inert.
 ## Respect Project Conventions
 
 The shared context may include `PROJECT_INSTRUCTIONS` from `CLAUDE.md`,
-`AGENTS.md`, or `CONTRIBUTING.md`. **Those override generic advice.**
+`AGENTS.md`, `CONTRIBUTING.md`, or `.kiro/steering/`. **Those override generic advice.**
 
 - If the project says "no comments," do not flag missing docstrings.
 - If the project says "no JSDoc on internal functions," stay quiet.
@@ -162,7 +162,7 @@ Maintainability rarely produces Critical findings — but it can:
   import at the module graph root).
 - **High**: significant duplication with existing code, large scope
   creep that hides real changes, violation of a stated project rule
-  (from `CLAUDE.md`) that will compound.
+  (from the project instructions) that will compound.
 - **Medium**: poor naming, excessive nesting, dead code, one-use
   abstraction, drift from surrounding style.
 - **Low**: nits — minor naming, stylistic polish that different

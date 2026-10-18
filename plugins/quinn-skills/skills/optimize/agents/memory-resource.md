@@ -119,24 +119,14 @@ If `Profile mode: true` is set:
    - Go: `go test -memprofile=mem.prof`
    - JVM: `jmap`, `async-profiler --alloc`
 
-2. Propose the exact command via `AskUserQuestion` before running:
-   > "I'd like to run `<command>` to collect a memory profile. It will
-   > execute the test/benchmark target and produce a heap snapshot. Approve?"
+2. **Do not run it.** You cannot get the user's approval from a subagent.
+   End your report with a `Proposed profiler command` section giving the
+   exact command, what it executes, and roughly how long it takes. The
+   orchestrator asks the user, runs it if approved, and cross-references
+   the top allocators against your findings.
 
-3. If approved, run it. Extract:
-   - Top allocators (functions by bytes allocated)
-   - Retained size by type (where available)
-   - Allocation rate / GC pressure (if the profiler reports it)
-
-4. Cross-reference allocator hotspots with your static findings:
-   - If an allocator matches → upgrade severity one tier and add a
-     `Profiled:` line with the allocation share.
-   - If an allocator has no static finding → add an Info-tier finding
-     "High allocation rate at `<location>` — no obvious cause in source,
-     investigate manually".
-
-5. If declined or the command fails, fall back to static and prepend the
-   report with `Fallback: static-only — <reason>`.
+3. If you cannot find a runnable entry point, say so in that section
+   instead of guessing a command.
 
 Never modify files. Never run anything other than the profiling command.
 

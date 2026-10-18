@@ -7,7 +7,7 @@ description: >-
   preparing for a security review, or hardening a codebase.
 user-invocable: true
 disable-model-invocation: true
-allowed-tools: Agent Bash(git *) Bash(npm audit*) Bash(pip audit*) Bash(cargo audit*) Bash(go list*) Bash(bundle audit*) Bash(osv-scanner*) Read Grep Glob WebSearch
+allowed-tools: Agent Bash(git *) Bash(npm audit*) Bash(pip audit*) Bash(cargo audit*) Bash(go list*) Bash(bundle audit*) Bash(osv-scanner*) Bash(pip-audit*) Bash(ls *) Bash(sed *) Bash(sort *) Bash(uniq *) Bash(head *) Read Grep Glob WebSearch
 argument-hint: "[scope: all | deps | secrets | injection | auth | crypto | config | ssrf | privacy | supply-chain | runtime]"
 ---
 
@@ -18,6 +18,34 @@ repository using 10 parallel review agents. Each agent is a specialist in a
 distinct security domain and has been instructed to assume the worst about every
 line of code. Trust nothing. Verify everything.
 
+## Harness compatibility
+
+This skill runs in Claude Code, Kiro and OpenCode. When a step below names a
+capability, use your harness's tool for it:
+
+| Capability | Claude Code | Kiro | OpenCode |
+|---|---|---|---|
+| Run a shell command | `Bash` | `shell` | `shell` |
+| Read, search, edit files | `Read`, `Grep`, `Glob`, `Edit` | `read`, `grep`, `glob`, `write` | `read`, `grep`, `glob`, `edit` |
+| Read-only subagent | `Agent` with `subagent_type: "Explore"` | `subagent` (`use_subagent` on older Kiro); tell it not to modify files | `subagent` with `agent: "explore"` |
+| Write-capable subagent | `Agent` with `subagent_type: "general-purpose"` | `subagent` (`use_subagent` on older Kiro) | `subagent` with `agent: "general"` |
+| Ask the user to choose | `AskUserQuestion` | ask in chat as a numbered list, then wait for the reply | `question` |
+| Web search | `WebSearch` | `web_search` | `websearch` |
+
+- **Parallel subagents**: start them all at once — several subagent calls in
+  the same turn, or one call listing every task when your subagent tool takes
+  a list (Kiro's `subagent`). Subagents cannot talk to the user; only you can.
+- **`$ARGUMENTS`** is whatever the user typed with the request. Claude Code
+  fills it in. In Kiro and OpenCode, take it from the user's message (the text
+  after `/<skill-name>` or the skill mention), and treat it as empty if there
+  is none.
+- **`${CLAUDE_SKILL_DIR}`** is this skill's own directory. Claude Code expands
+  it and the Kiro and OpenCode installers rewrite it. If you still see it
+  literally, use the directory this `SKILL.md` was loaded from.
+- **Shell blocks** in this skill are for you to run with your shell tool. Each
+  call starts a fresh shell, so carry values between steps by substituting
+  them as literal strings, not shell variables.
+
 ## Inputs
 
 - `$ARGUMENTS` — optional scope filter. Defaults to `all`.
@@ -27,45 +55,46 @@ line of code. Trust nothing. Verify everything.
 
 ## Preparation
 
-Before launching agents, gather baseline context that every agent will need:
+Before launching agents, gather baseline context that every agent will need.
+Run each command with your shell tool:
 
 1. Detect the project's language(s) and framework(s):
 
-```!
+```bash
 git ls-files | sed 's/.*\.//' | sort | uniq -c | sort -rn | head -20
 ```
 
 2. Get the repository file tree:
 
-```!
+```bash
 git ls-files | head -750
 ```
 
 3. Check for existing security tooling and configuration:
 
-```!
+```bash
 ls -1 .snyk .trivyignore .gitleaksignore .bandit .semgrepignore .eslintrc* .safety* tox.ini pyproject.toml package.json Cargo.toml go.sum Gemfile.lock composer.json pom.xml build.gradle .github/workflows/* .gitlab-ci.yml Dockerfile* docker-compose* k8s/ kubernetes/ terraform/ .terraform* Jenkinsfile .circleci/ 2>/dev/null || echo "none detected"
 ```
 
 4. **Run available dependency audit tools** to get CVE data for agents:
 
-```!
+```bash
 if [ -f package-lock.json ] || [ -f package.json ]; then npm audit --json 2>/dev/null | head -200 || echo "npm audit not available"; fi
 ```
 
-```!
+```bash
 if [ -f requirements.txt ] || [ -f pyproject.toml ] || [ -f Pipfile ]; then pip audit --format=json 2>/dev/null | head -200 || pip-audit --format=json 2>/dev/null | head -200 || echo "pip audit not available"; fi
 ```
 
-```!
+```bash
 if [ -f Cargo.toml ]; then cargo audit --json 2>/dev/null | head -200 || echo "cargo audit not available"; fi
 ```
 
-```!
+```bash
 if [ -f go.mod ]; then go list -json -m all 2>/dev/null | head -200 || echo "go list not available"; fi
 ```
 
-```!
+```bash
 if [ -f Gemfile.lock ]; then bundle audit check 2>/dev/null | head -100 || echo "bundle audit not available"; fi
 ```
 
@@ -75,7 +104,8 @@ and CVE audit results. You will pass them to each agent.
 ## Agent Dispatch
 
 Parse `$ARGUMENTS` (default `all`) to determine which agents to launch.
-Launch the selected agents **in parallel** using the Agent tool. Each agent
+Launch the selected agents **in parallel** as read-only subagents (see
+Harness compatibility). Each agent
 prompt MUST include the baseline context gathered above so agents can work
 without re-scanning.
 
@@ -95,11 +125,10 @@ use it as the agent's prompt, prepending the baseline context block.
 | `supply-chain` | `${CLAUDE_SKILL_DIR}/agents/supply-chain.md`       | Build integrity, artifact provenance         |
 | `runtime`      | `${CLAUDE_SKILL_DIR}/agents/runtime-safety.md`     | ReDoS, race conditions, prototype pollution  |
 
-When `all` is selected, launch **all 10 agents in parallel** in a single
-message containing 10 Agent tool calls.
+When `all` is selected, launch **all 10 agents in parallel**.
 
 For each agent:
-- Set `subagent_type` to `"Explore"` (read-only, no edits).
+- Use a read-only subagent (no edits).
 - Prefix the agent prompt with a context block:
 
 ```
@@ -130,7 +159,7 @@ The dependency audit agent MUST additionally:
    specify the exact minimum safe version to upgrade to. Format:
    `Upgrade <package> from <current> to >= <safe-version> (fixes CVE-XXXX-XXXXX)`
 
-3. **Check for zero-day advisories**: Use WebSearch to look up
+3. **Check for zero-day advisories**: Use your web search tool to look up
    `"<package-name>" CVE 2025 2026` for the top 20 most critical dependencies.
    Report any findings even if the audit tools didn't catch them.
 

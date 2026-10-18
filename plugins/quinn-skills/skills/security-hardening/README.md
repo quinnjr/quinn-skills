@@ -1,6 +1,6 @@
 # security-hardening
 
-A Claude Code skill that runs **10 parallel paranoid security review agents** to
+An agent skill for Claude Code, Kiro and OpenCode that runs **10 parallel paranoid security review agents** to
 audit a repository for vulnerabilities, misconfigurations, and security
 anti-patterns. Includes active CVE detection and dependency upgrade planning.
 
@@ -122,7 +122,7 @@ pip install osv-scanner  # or install from GitHub releases
 
 ## Requirements
 
-- Claude Code CLI or IDE extension
+- Claude Code, Kiro CLI, or OpenCode
 - A git repository to audit
 - (Optional) Language-specific audit tools for CVE detection
 

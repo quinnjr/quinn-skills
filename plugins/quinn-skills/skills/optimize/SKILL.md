@@ -12,7 +12,7 @@ description: >-
   or preparing a service for scale.
 user-invocable: true
 disable-model-invocation: true
-allowed-tools: Agent Bash(git *) Bash(cat *) Bash(ls *) Bash(rg *) Bash(npm *) Bash(pnpm *) Bash(node *) Bash(cargo *) Bash(go *) Bash(python *) Bash(python3 *) Bash(pytest *) Bash(uv *) Bash(poetry *) Bash(time *) Read Grep Glob Edit AskUserQuestion
+allowed-tools: Agent Bash(git *) Bash(cat *) Bash(ls *) Bash(rg *) Bash(npm *) Bash(pnpm *) Bash(node *) Bash(cargo *) Bash(go *) Bash(python *) Bash(python3 *) Bash(pytest *) Bash(uv *) Bash(poetry *) Bash(time *) Bash(sed *) Bash(sort *) Bash(uniq *) Bash(head *) Bash(grep *) Read Grep Glob Edit AskUserQuestion
 argument-hint: "[domains: all | runtime | db | bundle | memory | general] [path] [--profile] [--threshold critical|warning|info]"
 ---
 
@@ -31,6 +31,34 @@ This skill is related to `/complexity-audit` but broader: `/complexity-audit`
 scores Big O for every function; `/optimize` hunts runtime hot paths, DB
 anti-patterns, bundle bloat, memory waste, and cross-cutting performance
 issues that Big O alone won't catch.
+
+## Harness compatibility
+
+This skill runs in Claude Code, Kiro and OpenCode. When a step below names a
+capability, use your harness's tool for it:
+
+| Capability | Claude Code | Kiro | OpenCode |
+|---|---|---|---|
+| Run a shell command | `Bash` | `shell` | `shell` |
+| Read, search, edit files | `Read`, `Grep`, `Glob`, `Edit` | `read`, `grep`, `glob`, `write` | `read`, `grep`, `glob`, `edit` |
+| Read-only subagent | `Agent` with `subagent_type: "Explore"` | `subagent` (`use_subagent` on older Kiro); tell it not to modify files | `subagent` with `agent: "explore"` |
+| Write-capable subagent | `Agent` with `subagent_type: "general-purpose"` | `subagent` (`use_subagent` on older Kiro) | `subagent` with `agent: "general"` |
+| Ask the user to choose | `AskUserQuestion` | ask in chat as a numbered list, then wait for the reply | `question` |
+| Web search | `WebSearch` | `web_search` | `websearch` |
+
+- **Parallel subagents**: start them all at once — several subagent calls in
+  the same turn, or one call listing every task when your subagent tool takes
+  a list (Kiro's `subagent`). Subagents cannot talk to the user; only you can.
+- **`$ARGUMENTS`** is whatever the user typed with the request. Claude Code
+  fills it in. In Kiro and OpenCode, take it from the user's message (the text
+  after `/<skill-name>` or the skill mention), and treat it as empty if there
+  is none.
+- **`${CLAUDE_SKILL_DIR}`** is this skill's own directory. Claude Code expands
+  it and the Kiro and OpenCode installers rewrite it. If you still see it
+  literally, use the directory this `SKILL.md` was loaded from.
+- **Shell blocks** in this skill are for you to run with your shell tool. Each
+  call starts a fresh shell, so carry values between steps by substituting
+  them as literal strings, not shell variables.
 
 ## Inputs
 
@@ -77,9 +105,7 @@ Parse `$ARGUMENTS` first (see Inputs above). Every command below substitutes
 the parsed `SCOPE_PATH` as a literal string — do not pre-execute any of them
 before argument parsing, or the path scope is silently ignored.
 
-Run the following with the Bash tool (not as pre-execution `!`-blocks — those
-run at skill invocation, before `$ARGUMENTS` is parsed, and would ignore the
-requested scope path entirely):
+Run the following with your shell tool, after parsing the arguments:
 
 ### 1.1 Detect languages and manifests
 
@@ -159,9 +185,9 @@ user can see the audit didn't just silently skip a domain.
 
 ## Phase 2: Agent Dispatch
 
-Launch only the agents in `EFFECTIVE_DOMAINS` **in parallel**, in a single
-message containing multiple Agent tool calls. Use `subagent_type: "Explore"`
-for each (read-only except for the optional profiling step — see below).
+Launch only the agents in `EFFECTIVE_DOMAINS` **in parallel** as read-only
+subagents (see Harness compatibility). They never run profilers themselves —
+see the dynamic mode rule below.
 
 If a domain was auto-excluded, do not launch it and do not fabricate
 findings for it — Phase 3 reports it as skipped instead.
@@ -205,21 +231,29 @@ Tiers:
 
 **Dynamic mode rule (runtime and memory agents only):**
 
-When `PROFILE_MODE` is true, the `runtime` and `memory` agents follow these
-extra steps:
+When `PROFILE_MODE` is true, profiling is split between the `runtime` and
+`memory` agents and you, because subagents cannot ask the user for approval:
 
-1. Detect the project's test or benchmark entry point from the manifests and
-   `FULL_TREE`.
-2. Propose a concrete profiler command (see
-   `${CLAUDE_SKILL_DIR}/reference/profiling-commands.md`).
-3. **Stop and ask the user for explicit confirmation** before running
-   anything — use `AskUserQuestion`. Never run a profiler without approval.
-4. If approved, run the command, parse output, and cross-reference hot
-   functions against the static findings. Upgrade severity when real data
-   confirms a suspicion.
-5. If the user declines, or the project is not runnable (no test target,
-   missing deps, build broken), fall back to static analysis and note
-   `Fallback: static-only — <reason>` in the agent's report.
+1. The `runtime` and `memory` agents detect the project's test or benchmark
+   entry point, finish their static analysis, and return a **Proposed
+   profiler command** (see
+   `${CLAUDE_SKILL_DIR}/reference/profiling-commands.md`) with their
+   findings. They do not run it.
+2. After the agents return, show the user each proposed command and **ask
+   for explicit approval** (see Harness compatibility). Never run a
+   profiler without approval.
+3. Run each approved command yourself and parse the output: top hot
+   functions with CPU share for `runtime`; top allocators, retained size
+   and allocation rate for `memory`. Cross-reference them against that
+   agent's static findings:
+   - A hotspot that matches a finding → upgrade it one tier (info →
+     warning, warning → critical) and add its `Profiled` line.
+   - A hotspot with no finding → add an Info-tier finding "Hot path
+     without obvious inefficiency — investigate manually".
+4. If the user declines, the agent could not find an entry point, or the
+   project is not runnable (no test target, missing deps, build broken),
+   keep the static findings and note `Fallback: static-only — <reason>`
+   for that domain.
 
 All other agents stay static regardless of `PROFILE_MODE`.
 
@@ -254,8 +288,8 @@ Domains skipped (no signal detected): {domain: reason, ... — omit line if none
 Mode: {static | dynamic (profiled) | dynamic (fallback to static)}
 Threshold: {THRESHOLD}
 
-> **Note**: This is static analysis by Claude (plus optional profiler data in
-> dynamic mode). Suggestions are best-effort and must be validated by tests
+> **Note**: This is static analysis by an AI agent (plus optional profiler
+> data in dynamic mode). Suggestions are best-effort and must be validated by tests
 > before merging.
 
 ## Summary
@@ -310,7 +344,7 @@ empty table.
 ## Phase 4: Optimization Offer
 
 After printing the report, if there is at least one Critical or Warning
-finding, use `AskUserQuestion` to present implementation options:
+finding, ask the user to choose (see Harness compatibility):
 
 > "I found **{X} critical** and **{Y} warning** findings that could be
 > optimized. Want me to implement the fixes?"
@@ -318,20 +352,22 @@ finding, use `AskUserQuestion` to present implementation options:
 Options:
 
 1. **All** — every Critical + Warning finding
-2. **Critical only** — just the top tier
-3. **Behavior-preserving only** — skip anything marked `Behavior-preserving?: no`
-4. **Pick** — list findings with numbers and let the user select a subset
-5. **None** — keep the report as-is
+2. **Behavior-preserving only** — skip anything marked `Behavior-preserving?: no`
+3. **Pick** — list findings with numbers and let the user select a subset
+4. **None** — keep the report as-is
+
+(Keep it to these four options — Claude Code's `AskUserQuestion` allows no
+more. "Pick" covers narrower slices such as Critical-only.)
 
 ### If the user chooses to implement
 
 1. Collect the selected findings.
 2. Group them by file.
-3. Launch parallel agents — one per file (or small group of files in the
-   same directory, capped at 6 concurrent). Each agent receives:
+3. Launch parallel write-capable subagents — one per file (or small group
+   of files in the same directory, capped at 6 concurrent). Each agent receives:
    - The file path(s) to modify
    - The specific findings with their suggested fixes
-   - Instructions to `Read` each file, then `Edit` with the optimization
+   - Instructions to read each file, then edit it to apply the optimization
    - Instructions to preserve function signatures and public APIs — if a
      signature change is unavoidable, skip the finding and flag it
 

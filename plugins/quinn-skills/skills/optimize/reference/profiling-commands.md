@@ -154,14 +154,15 @@ ruby -r memory_profiler -e "MemoryProfiler.report { load '<script>' }.pretty_pri
    `rbspy`. Avoid instrumenting the source unless no external
    profiler is available.
 
-3. If the project has no test or benchmark target, ask the user for an
-   entry-point command rather than guessing.
+3. If the project has no test or benchmark target, say so rather than
+   guessing; the orchestrator will ask the user for an entry-point command.
 
-4. Always ask the user via `AskUserQuestion` before running anything.
-   Show the exact command. Never execute profilers automatically.
+4. Never execute a profiler without the user's explicit approval of the
+   exact command. Agents only propose it; the orchestrator asks the user
+   and runs it.
 
-5. If the command takes longer than a couple of minutes to run, warn
-   the user in the confirmation prompt.
+5. If the command takes longer than a couple of minutes to run, say so in
+   the proposal so the user sees it in the confirmation prompt.
 
 6. If the command fails (missing tool, broken build, etc.), fall back
    to static-only analysis and note the fallback reason in the report.

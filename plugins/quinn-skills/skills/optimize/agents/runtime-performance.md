@@ -105,23 +105,14 @@ If `Profile mode: true` is set in the repository context:
 2. Consult `${CLAUDE_SKILL_DIR}/reference/profiling-commands.md` for the
    right profiler for the detected stack.
 
-3. **Before running anything**, present the exact command to the user via
-   `AskUserQuestion`:
-   > "I'd like to run this command to profile the runtime: `<command>`. It
-   > will execute the project's test/benchmark target. Approve?"
+3. **Do not run it.** You cannot get the user's approval from a subagent.
+   End your report with a `Proposed profiler command` section giving the
+   exact command, what it executes, and roughly how long it takes. The
+   orchestrator asks the user, runs it if approved, and cross-references
+   the top hot functions against your findings.
 
-4. If the user approves, run it. Parse the output and extract the top 20
-   hot functions with their CPU share.
-
-5. Cross-reference each hot function against your static findings:
-   - If a hot function matches a static finding → upgrade severity one tier
-     (info → warning, warning → critical) and add a `Profiled:` line to
-     that finding.
-   - If a hot function has no static finding → add a new Info-tier finding
-     "Hot function without obvious inefficiency — investigate manually".
-
-6. If the user declines or the command fails, fall back to static only and
-   prepend your report with `Fallback: static-only — <reason>`.
+4. If you cannot find a runnable entry point, say so in that section
+   instead of guessing a command.
 
 Never run anything other than the profiling command. Never write files.
 

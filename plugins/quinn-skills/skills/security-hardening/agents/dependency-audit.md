@@ -173,7 +173,8 @@ hunt for vulnerabilities:
 - Look for `.npmrc`, `pip.conf`, `.cargo/config.toml`, `settings.gradle`
 - Search for `postinstall`, `preinstall`, `setup.py`, `build.rs`
 - Count the depth and breadth of the dependency tree
-- **Use WebSearch** to look up CVEs for the top dependencies
+- **Use your web search tool** (`WebSearch`, `web_search` or `websearch`,
+  depending on the harness) to look up CVEs for the top dependencies
 - Parse any audit tool output provided in the Repository Context
 
 ## Output Format

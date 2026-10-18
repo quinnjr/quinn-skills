@@ -12,7 +12,7 @@ description: >-
   before opening a PR, or when asked for a second opinion on recent work.
 user-invocable: true
 disable-model-invocation: true
-allowed-tools: Agent Bash(git *) Bash(cat *) Bash(ls *) Bash(rg *) Bash(wc *) Read Grep Glob Edit AskUserQuestion
+allowed-tools: Agent Bash(git *) Bash(printf *) Bash(sed *) Bash(sort *) Bash(uniq *) Bash(head *) Bash(cat *) Bash(ls *) Bash(rg *) Bash(wc *) Read Grep Glob Edit AskUserQuestion
 argument-hint: "[scope: unstaged | staged | branch | HEAD~N..HEAD | <path>] [--domains correctness,security,maintainability,api,testing,errors,debt | all] [--threshold critical|high|medium|low] [--fix]"
 ---
 
@@ -30,6 +30,34 @@ It is deliberately distinct from `/complexity-audit`, `/optimize`, and
 `/security-hardening` (which are full-project audits) and from the
 `critical-reviewer` agent (a single hostile reviewer). This skill is the
 multi-dimensional review a senior engineer runs before approving a PR.
+
+## Harness compatibility
+
+This skill runs in Claude Code, Kiro and OpenCode. When a step below names a
+capability, use your harness's tool for it:
+
+| Capability | Claude Code | Kiro | OpenCode |
+|---|---|---|---|
+| Run a shell command | `Bash` | `shell` | `shell` |
+| Read, search, edit files | `Read`, `Grep`, `Glob`, `Edit` | `read`, `grep`, `glob`, `write` | `read`, `grep`, `glob`, `edit` |
+| Read-only subagent | `Agent` with `subagent_type: "Explore"` | `subagent` (`use_subagent` on older Kiro); tell it not to modify files | `subagent` with `agent: "explore"` |
+| Write-capable subagent | `Agent` with `subagent_type: "general-purpose"` | `subagent` (`use_subagent` on older Kiro) | `subagent` with `agent: "general"` |
+| Ask the user to choose | `AskUserQuestion` | ask in chat as a numbered list, then wait for the reply | `question` |
+| Web search | `WebSearch` | `web_search` | `websearch` |
+
+- **Parallel subagents**: start them all at once — several subagent calls in
+  the same turn, or one call listing every task when your subagent tool takes
+  a list (Kiro's `subagent`). Subagents cannot talk to the user; only you can.
+- **`$ARGUMENTS`** is whatever the user typed with the request. Claude Code
+  fills it in. In Kiro and OpenCode, take it from the user's message (the text
+  after `/<skill-name>` or the skill mention), and treat it as empty if there
+  is none.
+- **`${CLAUDE_SKILL_DIR}`** is this skill's own directory. Claude Code expands
+  it and the Kiro and OpenCode installers rewrite it. If you still see it
+  literally, use the directory this `SKILL.md` was loaded from.
+- **Shell blocks** in this skill are for you to run with your shell tool. Each
+  call starts a fresh shell, so carry values between steps by substituting
+  them as literal strings, not shell variables.
 
 ## Inputs
 
@@ -74,17 +102,17 @@ Examples:
 
 Determine the diff range before anything else. This drives every agent.
 
-IMPORTANT: every `!` block in this skill spawns a fresh shell. Shell
+IMPORTANT: every shell block in this skill runs in a fresh shell. Shell
 variables set in one block do NOT survive to the next. To work around
 that, the scope-resolution block below prints all the values you need;
 you (the model) should READ those values from its output and then
 substitute them as string literals into the subsequent commands before
-executing them via the Bash tool. Do NOT try to reference shell variables
+executing them with your shell tool. Do NOT try to reference shell variables
 like `$SCOPE_REF` across blocks — they will be empty.
 
 ### 1.1 Resolve scope in a single block
 
-```!
+```bash
 set -e
 MODE="" SCOPE_REF="" SCOPE_PATH="" BASE="" BASE_SHA=""
 
@@ -197,11 +225,13 @@ call sites, type definitions, and conventions.
 
 ### 2.1 Detect languages and manifests
 
-```!
-printf '%s\n' $CHANGED_FILES | sed 's/.*\.//' | sort | uniq -c | sort -rn
+Substitute the changed-file list from 1.2 for `<CHANGED_FILES>`:
+
+```bash
+printf '%s\n' <CHANGED_FILES> | sed 's/.*\.//' | sort | uniq -c | sort -rn
 ```
 
-```!
+```bash
 ls -1 package.json pnpm-lock.yaml Cargo.toml go.mod pyproject.toml requirements.txt Gemfile composer.json pom.xml build.gradle 2>/dev/null || echo "no manifests"
 ```
 
@@ -209,12 +239,12 @@ Store as `LANGUAGES` and `MANIFESTS`.
 
 ### 2.2 Framework and convention signals
 
-```!
+```bash
 rg -l --max-count=1 "express|fastify|nestjs|@nestjs|angular|react|vue|svelte|next|nuxt|remix|axum|actix|gin-gonic|flask|django|fastapi|rails|spring" -g '!node_modules' -g '!target' -g '!dist' -g '!vendor' 2>/dev/null | head -10 || echo "no framework detected"
 ```
 
-```!
-ls -1 CLAUDE.md AGENTS.md CONTRIBUTING.md .editorconfig .prettierrc* .eslintrc* rustfmt.toml .rubocop.yml .golangci.yml 2>/dev/null || echo "no convention files"
+```bash
+ls -1d CLAUDE.md AGENTS.md CONTRIBUTING.md .kiro/steering .editorconfig .prettierrc* .eslintrc* rustfmt.toml .rubocop.yml .golangci.yml 2>/dev/null || echo "no convention files"
 ```
 
 Store as `FRAMEWORKS` and `CONVENTIONS`.
@@ -222,15 +252,14 @@ Store as `FRAMEWORKS` and `CONVENTIONS`.
 ### 2.3 Project instructions
 
 If `CLAUDE.md`, `AGENTS.md`, or `CONTRIBUTING.md` exists at the repo root,
-read the top 200 lines of whichever is present and store as
-`PROJECT_INSTRUCTIONS`. Agents must respect these — they encode the user's
+or `.kiro/steering/` has rule files, read the top 200 lines of each one
+present and store them as `PROJECT_INSTRUCTIONS`. Agents must respect these — they encode the user's
 actual rules and override generic best-practice advice.
 
 ## Phase 3: Agent Dispatch
 
-Launch the selected agents **in parallel** in a single message containing
-multiple Agent tool calls. Use `subagent_type: "Explore"` for each
-(read-only).
+Launch the selected agents **in parallel** as read-only subagents (see
+Harness compatibility).
 
 | Domain key         | Agent prompt file                                           | Owns                                                    |
 | ------------------ | ----------------------------------------------------------- | ------------------------------------------------------- |
@@ -265,7 +294,7 @@ Prefix every agent prompt with this shared context block:
 ```
 
 ## Instructions
-Review ONLY the changes shown above. You may use Read/Grep/Glob to load
+Review ONLY the changes shown above. You may read and search files to load
 surrounding code for context (call sites, type definitions, referenced
 helpers), but your findings must reference lines inside the diff.
 
@@ -321,7 +350,7 @@ Filter per `THRESHOLD`:
 **Domains reviewed**: {DOMAINS}
 **Threshold**: {THRESHOLD}
 
-> **Note**: This review is static analysis by Claude. Findings are
+> **Note**: This review is static analysis by an AI agent. Findings are
 > best-effort — validate with the project's test suite and your own
 > judgment before acting.
 
@@ -394,7 +423,8 @@ empty table.
 ## Phase 5: Fix Offer
 
 If `FAST_FIX` is false and there is at least one finding at any tier —
-Critical, High, Medium, **or Low** — use `AskUserQuestion`:
+Critical, High, Medium, **or Low** — ask the user to choose (see Harness
+compatibility):
 
 > "Review found **{C} critical**, **{H} high**, **{M} medium**, and
 > **{L} low** findings. Want me to apply fixes?"
@@ -406,8 +436,8 @@ Options:
 3. **Pick** — list every finding, all tiers, numbered for selection
 4. **None** — keep the report as-is
 
-(`AskUserQuestion` caps at four options; "Pick" covers narrower slices
-such as Critical-only.)
+(Keep it to these four options — Claude Code's `AskUserQuestion` allows no
+more. "Pick" covers narrower slices such as Critical-only.)
 
 **Low findings are never dropped from this menu.** Always report the Low
 count in the prompt, always include them in "All findings", and always
@@ -428,10 +458,10 @@ user redirect via the same menu.
    (cap 6 concurrent). Each receives:
    - Target file path(s)
    - The specific findings with their suggested fixes
-   - Instructions to `Read`, then `Edit` in place
+   - Instructions to read, then edit in place
    - A rule: preserve public API signatures unless a finding explicitly
      demands a signature change. If unavoidable, skip and flag.
-   - A rule: one logical fix per Edit, do not opportunistically refactor.
+   - A rule: one logical fix per edit, do not opportunistically refactor.
 
 4. After fix agents return, run the project's test command. Detect via
    manifest:
@@ -461,14 +491,15 @@ reason.
 Do NOT auto-commit. Leave fixes staged (or unstaged, matching the
 original scope) so the user can review with `git diff` and commit
 themselves. This skill produces review artifacts, not commits — the
-user-controlled commit flow (via `/commit` or their normal discipline)
+user-controlled commit flow (their usual commit command or workflow)
 takes it from here.
 
 ## Safety Rails
 
 - **Read-only through Phase 4.** Phases 1-4 never write files.
-- **Respect project instructions.** If `CLAUDE.md`/`AGENTS.md` conflicts
-  with generic best practices, the project instructions win.
+- **Respect project instructions.** If `CLAUDE.md`, `AGENTS.md` or
+  `.kiro/steering/` conflict with generic best practices, the project
+  instructions win.
 - **No duplicate findings.** Deduplicate aggressively across domains.
 - **Every finding is actionable.** Drop anything without a concrete fix
   and a real consequence.
