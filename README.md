@@ -35,6 +35,25 @@ Run `/plugin marketplace update quinn-skills` to pull new versions.
 
 Tests: `tests/install-kiro.test.sh`
 
+## OpenCode
+
+`install-opencode.sh` copies the plugin's skills and agents into an OpenCode config directory (needs `jq` and `perl`):
+
+```sh
+./install-opencode.sh                          # $OPENCODE_CONFIG_DIR, or ${XDG_CONFIG_HOME:-~/.config}/opencode
+./install-opencode.sh --config-dir ~/oc-a --config-dir ~/oc-b   # several directories
+./install-opencode.sh --dry-run                # show what would change
+./install-opencode.sh --uninstall              # remove what it installed
+```
+
+- The directory is chosen the same way opencode chooses it: `--config-dir` flags first, then `OPENCODE_CONFIG_DIR`, then `${XDG_CONFIG_HOME:-~/.config}/opencode`. opencode resolves a relative value against the directory it is launched from, so the installer warns and uses the current directory.
+- Skills go to `<dir>/skills/`, with `${CLAUDE_SKILL_DIR}` rewritten to the installed path. They keep `disable-model-invocation: true`, which opencode honors: you invoke them from the `/skills` picker, and the model doesn't trigger them on its own.
+- Agents become subagents at `<dir>/agents/<name>.md`.
+- Ownership, `--force` backups and stale-file removal work the same as in the Kiro installer.
+- After installing, it reads the global config (`<dir>/opencode.json`, `<dir>/opencode.jsonc`, and `$OPENCODE_CONFIG` when no `--config-dir` is given). It warns about any installed agent that is disabled there, and any skill or agent that a `skill` or `task` permission rule denies. Both the legacy (`agent`, `permission`, `tools`) and current (`agents`, `permissions`) formats are checked.
+
+Tests: `tests/install-opencode.test.sh`
+
 ## Layout
 
 ```
