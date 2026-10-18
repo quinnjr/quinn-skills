@@ -7,14 +7,14 @@
   },
   "metadata": {
     "description": "Joseph R. Quinn's personal Claude Code plugins and skills",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "plugins": [
     {
       "name": "quinn-skills",
       "source": "./plugins/quinn-skills",
       "description": "Core collection of Joseph R. Quinn's agent skills",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "author": {
         "name": "Joseph R. Quinn"
       },
